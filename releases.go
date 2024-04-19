@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
+	"slices"
 	"sort"
 	"strings"
 
@@ -26,8 +28,8 @@ type (
 		exists  bool
 		release string
 	}
-	// gitReleasesSuccessMsg is a message that carries a list of GitHub releases.
-	gitReleasesSuccessMsg = []Release
+	// gitReleasesDownloadSuccessMsg is a message that carries a list of GitHub releases.
+	gitReleasesDownloadSuccessMsg = []Release
 	// gitReleaseDownloadedMsg is a message that carries information about
 	// a downloaded GitHub release: the release name, the destination directory,
 	// and whether the result was cached or not.
@@ -195,8 +197,9 @@ func DoesGitHubReleaseExist(ownerRepo, token, release string) tea.Cmd {
 
 // GetGitHubReleases fetches GitHub releases for a repository.
 // It can use a token for authentication, and it will fetch only
-// releases between the `from` and the `to` release.
-func GetGitHubReleases(ownerRepo, token, from, to string) tea.Cmd {
+// releases between the `from` and the `to` release, ignoring the
+// releases that don't match the `regex` regular expression.
+func GetGitHubReleases(ownerRepo, token, from, to, regex string) tea.Cmd {
 	page := 1
 	fetchReleases := func() ([]Release, error) {
 		request, err := http.NewRequest(
@@ -246,8 +249,27 @@ func GetGitHubReleases(ownerRepo, token, from, to string) tea.Cmd {
 			return releases, err
 		}
 
+		// Sort releases by reverse creation date
+		slices.SortFunc(
+			releases, func(a, b Release) int {
+				return int(b.CreatedAt.Unix() - a.CreatedAt.Unix())
+			},
+		)
+
 		return releases, nil
 	}
+
+	var compile *regexp.Regexp
+	if regex != "" {
+		var err error
+		compile, err = regexp.Compile(regex)
+		if err != nil {
+			return func() tea.Msg {
+				return errMsg(err)
+			}
+		}
+	}
+
 	return func() tea.Msg {
 		var releases []Release
 
@@ -260,7 +282,17 @@ func GetGitHubReleases(ownerRepo, token, from, to string) tea.Cmd {
 				return errMsg(err)
 			}
 
+			if releases == nil {
+				// Slightly optimize the slice allocation
+				releases = make([]Release, 0, len(fetchedReleases))
+			}
+
 			for _, release := range fetchedReleases {
+				if compile != nil {
+					if compile.MatchString(release.TagName) {
+						continue
+					}
+				}
 				if foundFrom && foundTo {
 					// We've found both releases, so we don't need to add any anymore
 					break
@@ -285,7 +317,7 @@ func GetGitHubReleases(ownerRepo, token, from, to string) tea.Cmd {
 			page++
 		}
 
-		return gitReleasesSuccessMsg(releases)
+		return releases
 	}
 }
 

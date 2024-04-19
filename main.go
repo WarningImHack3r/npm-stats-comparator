@@ -16,8 +16,8 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// pkgVersion is the version of the application.
-const pkgVersion = "1.0.0"
+// appVersion is the version of the application.
+const appVersion = "1.1.0"
 
 // State represents the application's state.
 type State int
@@ -42,6 +42,7 @@ var (
 	ghToken       = flag.String("token", "", "GitHub token to use for API requests")
 	firstRelease  = flag.String("from", "", "Base release to compare")
 	secondRelease = flag.String("to", "", "Release to compare to")
+	ignoreRegex   = flag.String("ignore", "", "Regex to ignore releases names from the analysis")
 	extractionDir = flag.String("output", "releases", "Directory to extract releases to")
 	version       = flag.Bool("version", false, "Print the version and exit")
 
@@ -71,6 +72,7 @@ type (
 		ghToken       string           // GitHub token to use for API requests
 		firstRelease  string           // Base release to compare
 		secondRelease string           // Release to compare to
+		ignoreRegex   string           // Regex to ignore releases names from the analysis
 		releases      []Release        // GitHub releases
 		analysis      []AnalysisResult // Analysis results
 	}
@@ -108,7 +110,7 @@ func initialModel() tea.Model {
 			_, _ = fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
-		fmt.Println(filepath.Base(exe), pkgVersion)
+		fmt.Println(filepath.Base(exe), appVersion)
 		os.Exit(0)
 	}
 
@@ -118,6 +120,7 @@ func initialModel() tea.Model {
 			ghToken:       *ghToken,
 			firstRelease:  *firstRelease,
 			secondRelease: *secondRelease,
+			ignoreRegex:   *ignoreRegex,
 		},
 	}
 
@@ -151,6 +154,11 @@ func initialModel() tea.Model {
 		input.Placeholder = "Release to compare to"
 		m.inputs = append(m.inputs, input)
 	}
+	if m.data.ignoreRegex == "" {
+		input := textinput.New()
+		input.Placeholder = "Regex to ignore releases names (optional)"
+		m.inputs = append(m.inputs, input)
+	}
 
 	// Focus the first input
 	if len(m.inputs) > 0 {
@@ -178,7 +186,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		os.Exit(1)
 	case model:
 		if m.state == StateInit && len(m.inputs) == 0 {
-			m.state++
+			m.state++ // Move to StateChecking
 			_, spinCmd := m.spinner.Update(msg)
 			return m, tea.Batch(
 				spinCmd,
@@ -246,9 +254,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.err = fmt.Errorf("invalid release to compare to")
 						break
 					}
+					inputIndex++
+				}
+				if m.data.ignoreRegex == "" {
+					m.data.ignoreRegex = m.inputs[inputIndex].Value()
 				}
 
-				m.state++ // Move to the next state (checking if both releases exist)
+				m.state++ // Move to StateChecking
 				return m, tea.Batch(
 					DoesGitHubReleaseExist(m.data.ghRepo, m.data.ghToken, m.data.firstRelease),
 					DoesGitHubReleaseExist(m.data.ghRepo, m.data.ghToken, m.data.secondRelease),
@@ -307,7 +319,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.exists {
 			m.existingReleasesCount++
 			if m.existingReleasesCount == 2 {
-				m.state++
+				m.state++ // Move to StateFetching
 				_, spinCmd := m.spinner.Update(msg)
 				return m, tea.Batch(
 					spinCmd,
@@ -316,15 +328,20 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.data.ghToken,
 						m.data.firstRelease,
 						m.data.secondRelease,
+						m.data.ignoreRegex,
 					),
 				)
 			}
 		} else {
 			m.err = fmt.Errorf("%s does not exist", msg.release)
 		}
-	case gitReleasesSuccessMsg:
+	case gitReleasesDownloadSuccessMsg:
 		m.data.releases = msg
-		m.state++
+		m.state++ // Move to StateDownloadExtract
+		if len(m.data.releases) == 0 {
+			m.err = fmt.Errorf("no releases found, please check your inputs")
+			break
+		}
 		_, spinCmd := m.spinner.Update(msg)
 		commands := make([]tea.Cmd, len(m.data.releases)+1)
 		commands[0] = spinCmd
@@ -340,7 +357,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.downloadCacheCount++
 		}
 		if m.downloadProgress == uint(len(m.data.releases)) {
-			m.state++
+			m.state++ // Move to StateAnalyzing
 			_, spinCmd := m.spinner.Update(msg)
 			analysis := make([]tea.Cmd, len(m.data.releases)+1)
 			analysis[0] = spinCmd
@@ -405,7 +422,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.list.SetSize(*m.wantedWidth, *m.wantedHeight)
 			}
 
-			m.state++
+			m.state++ // Move to StateSummary
 		}
 	case tea.WindowSizeMsg:
 		h, v := docStyle.GetFrameSize()

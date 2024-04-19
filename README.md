@@ -20,6 +20,7 @@ Available options:
 - `--token`: The GitHub token to use for the requests. _(Optional, defaults to none)_
 - `--from`: The base release to compare from.
 - `--to`: The release to compare to.
+- `--ignore`: A regex pattern to ignore tag names. _(Optional, defaults to none)_
 - `--output`: The output directory to download releases into. _(Optional, defaults to `./releases/`)_
 - `--help`: Display the help message.
 - `--version`: Display the version of the script.
