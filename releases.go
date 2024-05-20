@@ -54,8 +54,8 @@ type AnalysisResult struct {
 }
 
 type ListItem struct {
-	Previous *ListItem
-	Next     *ListItem
+	previous *ListItem
+	next     *ListItem
 	AnalysisResult
 }
 
@@ -71,18 +71,18 @@ func (l ListItem) Title() string {
 	}
 	var sb strings.Builder
 
-	if l.Previous != nil {
+	if l.previous != nil {
 		// All releases except the last one of the list
 		sb.WriteString("  ")
-		diffWithPrevious := int(l.totalLines) - int(l.Previous.totalLines)
+		diffWithPrevious := int(l.totalLines) - int(l.previous.totalLines)
 		sb.WriteString(textForDiff(diffWithPrevious))
 
-		if l.Next == nil {
+		if l.next == nil {
 			// First release of the list
 			sb.WriteString(" • Total: ")
-			first := l.Previous
-			for first.Previous != nil {
-				first = first.Previous
+			first := l.previous
+			for first.previous != nil {
+				first = first.previous
 			}
 			diffWithFirst := int(l.totalLines) - int(first.totalLines)
 			sb.WriteString(textForDiff(diffWithFirst))

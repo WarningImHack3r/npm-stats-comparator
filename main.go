@@ -17,7 +17,7 @@ import (
 )
 
 // appVersion is the version of the application.
-const appVersion = "1.1.0"
+const appVersion = "1.2.0"
 
 // State represents the application's state.
 type State int
@@ -44,7 +44,11 @@ var (
 	secondRelease = flag.String("to", "", "Release to compare to")
 	ignoreRegex   = flag.String("ignore", "", "Regex to ignore releases names from the analysis")
 	extractionDir = flag.String("output", "releases", "Directory to extract releases to")
-	version       = flag.Bool("version", false, "Print the version and exit")
+	remove        = flag.Bool(
+		"remove", false,
+		"Remove the directory containing the extracted releases once the processing is done",
+	)
+	version = flag.Bool("version", false, "Print the version and exit")
 
 	docStyle    = lipgloss.NewStyle().Margin(1, 2)
 	svelteColor = lipgloss.Color("#ff3e00")
@@ -392,18 +396,26 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		if areAllAnalysesDone {
+			// Remove the directory containing the extracted releases
+			if *remove {
+				if err := os.RemoveAll(*extractionDir); err != nil {
+					m.err = err
+					break
+				}
+			}
+
 			// Populate the list
 			items := make([]ListItem, len(m.data.analysis))
 			for i, analysis := range m.data.analysis {
 				item := ListItem{AnalysisResult: analysis}
 				if i > 0 {
-					item.Next = &items[i-1]
+					item.next = &items[i-1]
 				}
 				items[i] = item
 			}
 			for i := len(items) - 1; i >= 0; i-- {
 				if i < len(items)-1 {
-					items[i].Previous = &items[i+1]
+					items[i].previous = &items[i+1]
 				}
 			}
 			listItems := make([]list.Item, len(items))

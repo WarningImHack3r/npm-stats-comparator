@@ -22,6 +22,7 @@ Available options:
 - `--to`: The release to compare to.
 - `--ignore`: A regex pattern to ignore tag names. _(Optional, defaults to none)_
 - `--output`: The output directory to download releases into. _(Optional, defaults to `./releases/`)_
+- `--remove`: Remove the downloaded releases after the comparison. _(Optional, defaults to `false`)_
 - `--help`: Display the help message.
 - `--version`: Display the version of the script.
 
