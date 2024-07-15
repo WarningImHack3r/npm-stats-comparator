@@ -19,7 +19,7 @@ import (
 // appVersion is the version of the application.
 const appVersion = "1.2.0"
 
-// State represents the application's state.
+// State represents the application state.
 type State int
 
 const (
@@ -70,7 +70,7 @@ type (
 	// fatalErr is a fatal error message.
 	fatalErr struct{}
 
-	// data is the application's data model.
+	// data is the application data model.
 	data struct {
 		ghRepo        string           // GitHub repository to compare releases from. Format: owner/repo
 		ghToken       string           // GitHub token to use for API requests
@@ -81,7 +81,7 @@ type (
 		analysis      []AnalysisResult // Analysis results
 	}
 
-	// model is the application's internal state.
+	// model is the application internal state.
 	model struct {
 		data  data
 		state State
@@ -104,7 +104,7 @@ type (
 	}
 )
 
-func initialModel() tea.Model {
+func initialModel() model {
 	flag.Parse()
 
 	// Print version and exit
@@ -452,8 +452,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	if m.list != nil {
-		model, cmd := m.list.Update(msg)
-		m.list = &model
+		listModel, cmd := m.list.Update(msg)
+		m.list = &listModel
 		return m, cmd
 	}
 
@@ -467,7 +467,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m model) View() string {
 	if m.err != nil {
-		return errorStyle.Render(fmt.Sprintf("Error: %s\n", m.err))
+		return errorStyle.Render(fmt.Sprintf("Error: %v\n", m.err))
 	}
 
 	var builder strings.Builder
@@ -539,8 +539,9 @@ func (m model) View() string {
 var _ tea.Model = (*model)(nil)
 
 func main() {
-	if _, err := tea.NewProgram(initialModel(), tea.WithAltScreen()).Run(); err != nil {
-		fmt.Println("Error running program:", err)
-		tea.Quit()
+	p := tea.NewProgram(initialModel(), tea.WithAltScreen())
+	if _, err := p.Run(); err != nil {
+		_, _ = fmt.Fprintln(os.Stderr, "Error running program:", err)
+		os.Exit(1)
 	}
 }
