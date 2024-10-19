@@ -17,7 +17,7 @@ import (
 )
 
 // appVersion is the version of the application.
-const appVersion = "1.2.0"
+const appVersion = "1.3.0"
 
 // State represents the application state.
 type State int
@@ -224,7 +224,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.state != StateInit {
 				break
 			}
-			// Did the user press enter while the submit button was focused?
+			// Did the user press enter while the "submit" button was focused?
 			if typ == tea.KeyEnter && m.focusIndex == len(m.inputs) {
 				// Get back the info from the inputs
 				inputIndex := 0
@@ -337,7 +337,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				)
 			}
 		} else {
-			m.err = fmt.Errorf("%s does not exist", msg.release)
+			m.err = fmt.Errorf(
+				"%s does not exist, check that you input an existing GitHub tag"+
+					" (check at https://github.com/%s/tags)", msg.release, m.data.ghRepo,
+			)
 		}
 	case gitReleasesDownloadSuccessMsg:
 		m.data.releases = msg
@@ -366,7 +369,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			analysis := make([]tea.Cmd, len(m.data.releases)+1)
 			analysis[0] = spinCmd
 			for i, release := range m.data.releases {
-				analysis[i+1] = AnalyseRelease(*extractionDir, release.TagName)
+				analysis[i+1] = AnalyzeRelease(*extractionDir, release.TagName)
 			}
 			return m, tea.Batch(analysis...)
 		}
@@ -423,7 +426,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				listItems[i] = item
 			}
 
-			// Create list
+			// Create the list
 			l := list.New(listItems, list.NewDefaultDelegate(), 0, 0)
 			l.Title = "Releases comparison"
 			l.Styles.Title = svelteBg.Padding(0, 1)
@@ -476,15 +479,15 @@ func (m model) View() string {
 	case StateInit:
 		builder.WriteRune('\n')
 		for i := range m.inputs {
-			builder.WriteString(m.inputs[i].View())
-			if i < len(m.inputs)-1 {
+			if i > 0 {
 				builder.WriteRune('\n')
 			}
+			builder.WriteString(m.inputs[i].View())
 		}
 
 		button := "[ Submit ]"
 		if m.focusIndex == len(m.inputs) {
-			button = svelteText.Copy().Render(button)
+			button = svelteText.Render(button)
 		}
 		_, err := fmt.Fprintf(&builder, "\n\n%s\n\n", button)
 		if err != nil {

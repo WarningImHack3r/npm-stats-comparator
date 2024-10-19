@@ -28,4 +28,5 @@ Available options:
 
 ## Installation
 
-Just download the binary from the [releases page](https://github.com/WarningImHack3r/npm-stats-comparator/releases) and you're good to go!
+Just download the binary from the [Releases page](https://github.com/WarningImHack3r/npm-stats-comparator/releases)
+and you're good to Go!

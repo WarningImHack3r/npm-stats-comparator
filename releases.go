@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,7 +11,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
-	"sort"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/list"
@@ -100,13 +100,13 @@ func (l ListItem) Description() string {
 		Key   string
 		Value uint
 	}
-	var sorted []kv
+	sorted := make([]kv, 0, len(l.linesByLanguage))
 	for k, v := range l.linesByLanguage {
 		sorted = append(sorted, kv{k, v})
 	}
-	sort.Slice(
-		sorted, func(i, j int) bool {
-			return sorted[i].Value > sorted[j].Value
+	slices.SortStableFunc(
+		sorted, func(a, b kv) int {
+			return cmp.Compare(a.Value, b.Value)
 		},
 	)
 	visibleLanguages := 2
@@ -121,10 +121,10 @@ func (l ListItem) Description() string {
 
 	// Print languages
 	for i, lang := range sorted {
-		sb.WriteString(fmt.Sprintf("%s (%d lines)", lang.Key, lang.Value))
-		if i < len(sorted)-1 {
+		if i > 0 {
 			sb.WriteString(" / ")
 		}
+		sb.WriteString(fmt.Sprintf("%s (%d lines)", lang.Key, lang.Value))
 	}
 
 	return sb.String()
@@ -250,9 +250,9 @@ func GetGitHubReleases(ownerRepo, token, from, to, regex string) tea.Cmd {
 		}
 
 		// Sort releases by reverse creation date
-		slices.SortFunc(
+		slices.SortStableFunc(
 			releases, func(a, b Release) int {
-				return int(b.CreatedAt.Unix() - a.CreatedAt.Unix())
+				return cmp.Compare(a.CreatedAt.Unix(), b.CreatedAt.Unix())
 			},
 		)
 
@@ -340,8 +340,8 @@ func DownloadGitHubRelease(release, destDir string) tea.Cmd {
 		}
 
 		// Create the URL
-		// sveltejs/svelte svelte@5.0.0-next.90 -> https://registry.npmjs.org/svelte/-/svelte-5.0.0-next.90.tgz
-		// sveltejs/kit @sveltejs/kit@1.0.0-next.589 -> https://registry.npmjs.org/@sveltejs/kit/-/kit-1.0.0-next.589.tgz
+		// sveltejs/svelte svelte@5.0.0-next.90 -> https://registry.npmjs.com/svelte/-/svelte-5.0.0-next.90.tgz
+		// sveltejs/kit @sveltejs/kit@1.0.0-next.589 -> https://registry.npmjs.com/@sveltejs/kit/-/kit-1.0.0-next.589.tgz
 		name := ""
 		if split := strings.Split(release, "@"); len(split) > 0 {
 			if len(split) > 1 && strings.HasPrefix(release, "@") {
@@ -355,7 +355,7 @@ func DownloadGitHubRelease(release, destDir string) tea.Cmd {
 			pkg = strings.SplitN(release, "/", 2)[1]
 		}
 		url := fmt.Sprintf(
-			"https://registry.npmjs.org/%s/-/%s.tgz",
+			"https://registry.npmjs.com/%s/-/%s.tgz",
 			name, strings.ReplaceAll(pkg, "@", "-"),
 		)
 
@@ -396,9 +396,9 @@ func DownloadGitHubRelease(release, destDir string) tea.Cmd {
 	}
 }
 
-// AnalyseRelease analyses a release by counting lines of code
+// AnalyzeRelease analyzes a release by counting lines of code
 // for a given release within the location directory.
-func AnalyseRelease(locationDir string, releaseTag string) tea.Cmd {
+func AnalyzeRelease(locationDir string, releaseTag string) tea.Cmd {
 	return func() tea.Msg {
 		totalLines := uint(0)
 		totalFiles := uint(0)
