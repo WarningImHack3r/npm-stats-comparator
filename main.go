@@ -140,14 +140,13 @@ func initialModel() model {
 		input := textinput.New()
 		input.Placeholder = "GitHub repository (owner/repo)"
 		m.inputs = append(m.inputs, input)
-
-		if m.data.ghToken == "" {
-			tokenInput := textinput.New()
-			tokenInput.Placeholder = "GitHub token (optional)"
-			tokenInput.EchoMode = textinput.EchoPassword
-			tokenInput.EchoCharacter = '•'
-			m.inputs = append(m.inputs, tokenInput)
-		}
+	}
+	if m.data.ghToken == "" {
+		tokenInput := textinput.New()
+		tokenInput.Placeholder = "GitHub token (optional)"
+		tokenInput.EchoMode = textinput.EchoPassword
+		tokenInput.EchoCharacter = '•'
+		m.inputs = append(m.inputs, tokenInput)
 	}
 	if m.data.firstRelease == "" {
 		input := textinput.New()
@@ -237,11 +236,10 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 						break
 					}
 					inputIndex++
-
-					if m.data.ghToken == "" {
-						m.data.ghToken = m.inputs[inputIndex].Value()
-						inputIndex++
-					}
+				}
+				if m.data.ghToken == "" {
+					m.data.ghToken = m.inputs[inputIndex].Value()
+					inputIndex++
 				}
 				if m.data.firstRelease == "" {
 					m.data.firstRelease = m.inputs[inputIndex].Value()
