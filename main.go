@@ -8,12 +8,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/cursor"
-	"github.com/charmbracelet/bubbles/list"
-	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/bubbles/v2/cursor"
+	"github.com/charmbracelet/bubbles/v2/list"
+	"github.com/charmbracelet/bubbles/v2/spinner"
+	"github.com/charmbracelet/bubbles/v2/textinput"
+	tea "github.com/charmbracelet/bubbletea/v2"
+	"github.com/charmbracelet/lipgloss/v2"
 	"github.com/octokit/go-sdk/pkg/github/models"
 )
 
@@ -51,15 +51,10 @@ var (
 	)
 	version = flag.Bool("version", false, "Print the version and exit")
 
-	docStyle    = lipgloss.NewStyle().Margin(1, 2)
-	svelteColor = lipgloss.Color("#ff3e00")
-	svelteText  = lipgloss.NewStyle().Foreground(svelteColor)
-	svelteBg    = lipgloss.NewStyle().Background(svelteColor).Foreground(
-		lipgloss.AdaptiveColor{
-			Light: "#ffffff",
-			Dark:  "#000000",
-		},
-	)
+	docStyle          = lipgloss.NewStyle().Margin(1, 2)
+	svelteColor       = lipgloss.Color("#ff3e00")
+	svelteText        = lipgloss.NewStyle().Foreground(svelteColor)
+	svelteBg          = lipgloss.NewStyle().Background(svelteColor)
 	blurredSvelteText = lipgloss.NewStyle().Foreground(lipgloss.Color("#cc5833"))
 	blurredStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 	successStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("2"))
@@ -168,8 +163,9 @@ func initialModel() model {
 	// Focus the first input
 	if len(m.inputs) > 0 {
 		m.inputs[0].Focus()
-		m.inputs[0].Cursor.Style = svelteText
-		m.inputs[0].PromptStyle = svelteText
+		m.inputs[0].Styles.Cursor.Color = svelteColor
+		m.inputs[0].Styles.Focused.Prompt = svelteText
+		m.inputs[0].Styles.Blurred.Prompt = blurredSvelteText
 	}
 
 	return m
@@ -177,6 +173,7 @@ func initialModel() model {
 
 func (m model) Init() tea.Cmd {
 	return tea.Batch(
+		tea.RequestBackgroundColor,
 		func() tea.Msg {
 			return m
 		},
@@ -199,10 +196,14 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 				DoesGitHubReleaseExist(m.data.ghRepo, m.data.ghToken, m.data.secondRelease),
 			)
 		}
+	case tea.BackgroundColorMsg:
+		lightDark := lipgloss.LightDark(msg.IsDark())
+		svelteBg = svelteBg.Foreground(lightDark(lipgloss.Color("#ffffff"), lipgloss.Color("#000000")))
+		return m, nil
 	case tea.KeyMsg:
-		switch typ := msg.Type; typ {
+		switch key := msg.Key(); key.Code {
 		case tea.KeyCtrlC, tea.KeyEsc:
-			if m.list != nil && m.list.FilterState() == list.Filtering && typ != tea.KeyCtrlC {
+			if m.list != nil && m.list.FilterState() == list.Filtering && key != tea.KeyCtrlC {
 				break
 			}
 			// Quit
@@ -553,6 +554,7 @@ func (m model) View() string {
 }
 
 var _ tea.Model = (*model)(nil)
+var _ tea.ViewModel = (*model)(nil)
 
 func main() {
 	p := tea.NewProgram(initialModel(), tea.WithAltScreen())

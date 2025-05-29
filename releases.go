@@ -13,8 +13,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/list"
-	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/bubbles/v2/list"
+	tea "github.com/charmbracelet/bubbletea/v2"
 	abs "github.com/microsoft/kiota-abstractions-go"
 	octokit "github.com/octokit/go-sdk/pkg"
 	"github.com/octokit/go-sdk/pkg/github/models"
