@@ -206,7 +206,7 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 				break
 			}
 			// Quit
-			return m, tea.Interrupt
+			return m, tea.Quit
 		case tea.KeyCtrlR:
 			if m.state != StateInit {
 				break
