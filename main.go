@@ -73,13 +73,13 @@ type (
 
 	// data is the application data model.
 	data struct {
-		ghRepo        string           // GitHub repository to compare releases from. Format: owner/repo
-		ghToken       string           // GitHub token to use for API requests
-		firstRelease  string           // Base release to compare
-		secondRelease string           // Release to compare to
-		ignoreRegex   string           // Regex to ignore releases names from the analysis
-		releases      []models.Release // GitHub releases
-		analysis      []AnalysisResult // Analysis results
+		ghRepo        string               // GitHub repository to compare releases from. Format: owner/repo
+		ghToken       string               // GitHub token to use for API requests
+		firstRelease  string               // Base release to compare
+		secondRelease string               // Release to compare to
+		ignoreRegex   string               // Regex to ignore releases names from the analysis
+		releases      []models.Releaseable // GitHub releases
+		analysis      []AnalysisResult     // Analysis results
 	}
 
 	// model is the application internal state.

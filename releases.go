@@ -33,7 +33,7 @@ type (
 		release string
 	}
 	// gitReleasesDownloadSuccessMsg is a message that carries a list of GitHub releases.
-	gitReleasesDownloadSuccessMsg = []models.Release
+	gitReleasesDownloadSuccessMsg []models.Releaseable
 	// gitReleaseDownloadedMsg is a message that carries information about
 	// a downloaded GitHub release: the release name, the destination directory,
 	// and whether the result was cached or not.
@@ -289,7 +289,7 @@ func GetGitHubReleases(ownerRepo, token, from, to, regex string) tea.Cmd {
 			page++
 		}
 
-		return releases
+		return gitReleasesDownloadSuccessMsg(releases)
 	}
 }
 
