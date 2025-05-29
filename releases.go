@@ -187,16 +187,16 @@ func DoesGitHubReleaseExist(ownerRepo, token, release string) tea.Cmd {
 // releases between the `from` and the `to` release, ignoring the
 // releases that don't match the `regex` regular expression.
 func GetGitHubReleases(ownerRepo, token, from, to, regex string) tea.Cmd {
-	page := 1
+	options := make([]octokit.ClientOptionFunc, 0, 1)
+	if token != "" {
+		options = append(options, octokit.WithTokenAuthentication(token))
+	}
+	cli, errClient := octokit.NewApiClient(options...)
+	if errClient != nil {
+		panic(errClient)
+	}
+	page := int32(1)
 	fetchReleases := func() ([]models.Releaseable, error) {
-		options := make([]octokit.ClientOptionFunc, 0, 1)
-		if token != "" {
-			options = append(options, octokit.WithTokenAuthentication(token))
-		}
-		cli, err := octokit.NewApiClient(options...)
-		if err != nil {
-			return nil, err
-		}
 		owner, repo, found := strings.Cut(strings.TrimSuffix(ownerRepo, ".git"), "/")
 		if !found {
 			return nil, fmt.Errorf("malformed owner/repo: %s", ownerRepo)
@@ -209,6 +209,7 @@ func GetGitHubReleases(ownerRepo, token, from, to, regex string) tea.Cmd {
 			&abs.RequestConfiguration[repos.ItemItemReleasesRequestBuilderGetQueryParameters]{
 				QueryParameters: &repos.ItemItemReleasesRequestBuilderGetQueryParameters{
 					Per_page: &perPage,
+					Page:     &page,
 				},
 			},
 		)
