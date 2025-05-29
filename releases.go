@@ -2,7 +2,7 @@ package main
 
 import (
 	"cmp"
-	"encoding/json"
+	"context"
 	"fmt"
 	"io"
 	"io/fs"
@@ -15,6 +15,10 @@ import (
 
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
+	abs "github.com/microsoft/kiota-abstractions-go"
+	octokit "github.com/octokit/go-sdk/pkg"
+	"github.com/octokit/go-sdk/pkg/github/models"
+	"github.com/octokit/go-sdk/pkg/github/repos"
 )
 
 type (
@@ -29,7 +33,7 @@ type (
 		release string
 	}
 	// gitReleasesDownloadSuccessMsg is a message that carries a list of GitHub releases.
-	gitReleasesDownloadSuccessMsg = []Release
+	gitReleasesDownloadSuccessMsg = []models.Release
 	// gitReleaseDownloadedMsg is a message that carries information about
 	// a downloaded GitHub release: the release name, the destination directory,
 	// and whether the result was cached or not.
@@ -155,43 +159,26 @@ var extToLang = map[string]string{
 // a given repository. Can use a token for authentication.
 func DoesGitHubReleaseExist(ownerRepo, token, release string) tea.Cmd {
 	return func() tea.Msg {
-		req, err := http.NewRequest(
-			http.MethodGet,
-			fmt.Sprintf(
-				"https://api.github.com/repos/%s/releases/tags/%s",
-				strings.TrimSuffix(ownerRepo, ".git"),
-				release,
-			),
-			nil,
-		)
-		if err != nil {
-			return errMsg(err)
-		}
-
-		req.Header.Add("Accept", "application/vnd.github+json")
+		options := make([]octokit.ClientOptionFunc, 0, 1)
 		if token != "" {
-			req.Header.Add("Authorization", fmt.Sprintf("token %s", token))
+			options = append(options, octokit.WithTokenAuthentication(token))
 		}
-
-		resp, err := http.DefaultClient.Do(req)
+		cli, err := octokit.NewApiClient(options...)
 		if err != nil {
 			return errMsg(err)
 		}
-		defer func(Body io.ReadCloser) {
-			err := Body.Close()
-			if err != nil {
-				panic(err)
-			}
-		}(resp.Body)
-
-		if resp.StatusCode == http.StatusForbidden {
-			return errMsg(fmt.Errorf("forbidden, please check your token or provide one"))
+		owner, repo, found := strings.Cut(strings.TrimSuffix(ownerRepo, ".git"), "/")
+		if !found {
+			return errMsg(fmt.Errorf("malformed owner/repo: %s", ownerRepo))
 		}
-
-		return gitReleaseExistsMsg{
-			exists:  resp.StatusCode == http.StatusOK,
-			release: release,
+		_, err = cli.
+			Repos().ByOwnerId(owner).ByRepoId(repo).
+			Releases().Tags().ByTag(release).
+			Get(context.Background(), nil)
+		if err != nil {
+			return errMsg(err)
 		}
+		return gitReleaseExistsMsg{true, release}
 	}
 }
 
@@ -201,58 +188,38 @@ func DoesGitHubReleaseExist(ownerRepo, token, release string) tea.Cmd {
 // releases that don't match the `regex` regular expression.
 func GetGitHubReleases(ownerRepo, token, from, to, regex string) tea.Cmd {
 	page := 1
-	fetchReleases := func() ([]Release, error) {
-		request, err := http.NewRequest(
-			http.MethodGet,
-			fmt.Sprintf(
-				"https://api.github.com/repos/%s/releases",
-				strings.TrimSuffix(ownerRepo, ".git"),
-			),
-			nil,
+	fetchReleases := func() ([]models.Releaseable, error) {
+		options := make([]octokit.ClientOptionFunc, 0, 1)
+		if token != "" {
+			options = append(options, octokit.WithTokenAuthentication(token))
+		}
+		cli, err := octokit.NewApiClient(options...)
+		if err != nil {
+			return nil, err
+		}
+		owner, repo, found := strings.Cut(strings.TrimSuffix(ownerRepo, ".git"), "/")
+		if !found {
+			return nil, fmt.Errorf("malformed owner/repo: %s", ownerRepo)
+		}
+		perPage := int32(100)
+		releases, err := cli.
+			Repos().ByOwnerId(owner).ByRepoId(repo).
+			Releases().Get(
+			context.Background(),
+			&abs.RequestConfiguration[repos.ItemItemReleasesRequestBuilderGetQueryParameters]{
+				QueryParameters: &repos.ItemItemReleasesRequestBuilderGetQueryParameters{
+					Per_page: &perPage,
+				},
+			},
 		)
 		if err != nil {
 			return nil, err
 		}
 
-		query := request.URL.Query()
-		query.Add("page", fmt.Sprintf("%d", page))
-		request.URL.RawQuery = query.Encode()
-
-		request.Header.Add("Accept", "application/vnd.github+json")
-		if token != "" {
-			request.Header.Add("Authorization", fmt.Sprintf("token %s", token))
-		}
-
-		response, err := http.DefaultClient.Do(request)
-		if err != nil {
-			return nil, err
-		}
-		defer func(Body io.ReadCloser) {
-			err = Body.Close()
-			if err != nil {
-				panic(err)
-			}
-		}(response.Body)
-
-		if response.StatusCode == http.StatusForbidden {
-			return nil, fmt.Errorf("forbidden, please check your token or provide one")
-		}
-
-		body, err := io.ReadAll(response.Body)
-		if err != nil {
-			return nil, err
-		}
-
-		var releases []Release
-		err = json.Unmarshal(body, &releases)
-		if err != nil {
-			return releases, err
-		}
-
 		// Sort releases by reverse creation date
 		slices.SortStableFunc(
-			releases, func(a, b Release) int {
-				return cmp.Compare(a.CreatedAt.Unix(), b.CreatedAt.Unix())
+			releases, func(a, b models.Releaseable) int {
+				return cmp.Compare(a.GetCreatedAt().Unix(), b.GetCreatedAt().Unix())
 			},
 		)
 
@@ -271,7 +238,7 @@ func GetGitHubReleases(ownerRepo, token, from, to, regex string) tea.Cmd {
 	}
 
 	return func() tea.Msg {
-		var releases []Release
+		var releases []models.Releaseable
 
 		foundFrom := false
 		foundTo := false
@@ -284,12 +251,16 @@ func GetGitHubReleases(ownerRepo, token, from, to, regex string) tea.Cmd {
 
 			if releases == nil {
 				// Slightly optimize the slice allocation
-				releases = make([]Release, 0, len(fetchedReleases))
+				releases = make([]models.Releaseable, 0, len(fetchedReleases))
 			}
 
 			for _, release := range fetchedReleases {
+				tagName := release.GetTagName()
+				if tagName == nil {
+					continue
+				}
 				if compile != nil {
-					if compile.MatchString(release.TagName) {
+					if compile.MatchString(*tagName) {
 						continue
 					}
 				}
@@ -297,9 +268,9 @@ func GetGitHubReleases(ownerRepo, token, from, to, regex string) tea.Cmd {
 					// We've found both releases, so we don't need to add any anymore
 					break
 				}
-				if release.TagName == from {
+				if *tagName == from {
 					foundFrom = true
-				} else if release.TagName == to {
+				} else if *tagName == to {
 					foundTo = true
 				}
 				if !foundFrom && !foundTo {

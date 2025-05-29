@@ -14,6 +14,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/octokit/go-sdk/pkg/github/models"
 )
 
 // appVersion is the version of the application.
@@ -77,7 +78,7 @@ type (
 		firstRelease  string           // Base release to compare
 		secondRelease string           // Release to compare to
 		ignoreRegex   string           // Regex to ignore releases names from the analysis
-		releases      []Release        // GitHub releases
+		releases      []models.Release // GitHub releases
 		analysis      []AnalysisResult // Analysis results
 	}
 
@@ -183,8 +184,8 @@ func (m model) Init() tea.Cmd {
 	)
 }
 
-func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch msg := msg.(type) {
+func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := message.(type) {
 	case fatalErr:
 		time.Sleep(250 * time.Millisecond) // Wait for the view to render
 		os.Exit(1)
@@ -353,8 +354,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		commands := make([]tea.Cmd, len(m.data.releases)+1)
 		commands[0] = spinCmd
 		for i, release := range m.data.releases {
+			tagName := release.GetTagName()
+			if tagName == nil {
+				continue
+			}
 			commands[i+1] = DownloadGitHubRelease(
-				release.TagName, *extractionDir,
+				*tagName, *extractionDir,
 			)
 		}
 		return m, tea.Batch(commands...)
@@ -369,7 +374,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			analysis := make([]tea.Cmd, len(m.data.releases)+1)
 			analysis[0] = spinCmd
 			for i, release := range m.data.releases {
-				analysis[i+1] = AnalyzeRelease(*extractionDir, release.TagName)
+				tagName := release.GetTagName()
+				if tagName == nil {
+					continue
+				}
+				analysis[i+1] = AnalyzeRelease(*extractionDir, *tagName)
 			}
 			return m, tea.Batch(analysis...)
 		}
@@ -381,7 +390,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Get index of the release in m.data.releases
 		index := -1
 		for i, release := range m.data.releases {
-			if release.TagName == msg.releaseTag {
+			tagName := release.GetTagName()
+			if tagName == nil {
+				continue
+			}
+			if *tagName == msg.releaseTag {
 				index = i
 				break
 			}
@@ -455,7 +468,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	if m.list != nil {
-		listModel, cmd := m.list.Update(msg)
+		listModel, cmd := m.list.Update(message)
 		m.list = &listModel
 		return m, cmd
 	}
