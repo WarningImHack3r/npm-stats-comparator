@@ -5,6 +5,7 @@ import (
 	"bufio"
 	"bytes"
 	"compress/gzip"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -17,12 +18,9 @@ func Untar(destDir string, reader io.Reader) error {
 	if err != nil {
 		return err
 	}
-	defer func(gzr *gzip.Reader) {
-		err = gzr.Close()
-		if err != nil {
-			panic(err)
-		}
-	}(gzReader)
+	defer func() {
+		_ = gzReader.Close()
+	}()
 
 	tarReader := tar.NewReader(gzReader)
 
@@ -31,7 +29,7 @@ func Untar(destDir string, reader io.Reader) error {
 		header, err = tarReader.Next()
 
 		switch {
-		case err == io.EOF:
+		case errors.Is(err, io.EOF):
 			return nil
 		case err != nil:
 			return err
@@ -75,7 +73,7 @@ func CountLines(reader io.Reader) (uint, error) {
 
 	for {
 		bufferSize, err := reader.Read(buf)
-		if err != nil && err != io.EOF {
+		if err != nil && !errors.Is(err, io.EOF) {
 			return 0, err
 		}
 
@@ -88,7 +86,7 @@ func CountLines(reader io.Reader) (uint, error) {
 			buffPosition += i + 1
 			count++
 		}
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 	}

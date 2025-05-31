@@ -4,7 +4,6 @@ import (
 	"cmp"
 	"context"
 	"fmt"
-	"io"
 	"io/fs"
 	"net/http"
 	"os"
@@ -38,9 +37,8 @@ type (
 	// a downloaded GitHub release: the release name, the destination directory,
 	// and whether the result was cached or not.
 	gitReleaseDownloadedMsg struct {
-		release string
-		dest    string
-		cached  bool
+		release, dest string
+		cached        bool
 	}
 	// analysisDoneMsg is a message that carries information about the analysis
 	// of a release. See AnalysisResult for more information.
@@ -51,10 +49,9 @@ type (
 // of a release: the total number of lines, the total number of files, and
 // the number of lines by language, in addition to the release tag.
 type AnalysisResult struct {
-	releaseTag      string
-	totalLines      uint
-	totalFiles      uint
-	linesByLanguage map[string]uint
+	releaseTag             string
+	totalLines, totalFiles uint
+	linesByLanguage        map[string]uint
 }
 
 type ListItem struct {
@@ -110,13 +107,13 @@ func (l ListItem) Description() string {
 	}
 	slices.SortStableFunc(
 		sorted, func(a, b kv) int {
-			return cmp.Compare(a.Value, b.Value)
+			return cmp.Compare(b.Value, a.Value)
 		},
 	)
 	visibleLanguages := 2
 	if len(sorted) > visibleLanguages {
 		// Shorten to visibleLanguages languages and concat all the others into the "Other" category
-		otherElem := kv{fmt.Sprintf("and %d more", len(sorted[visibleLanguages:])), 0}
+		otherElem := kv{fmt.Sprintf("%d other languages", len(sorted[visibleLanguages:])), 0}
 		for i := visibleLanguages; i < len(sorted); i++ {
 			otherElem.Value += l.linesByLanguage[sorted[i].Key]
 		}
@@ -302,11 +299,7 @@ func DownloadGitHubRelease(release, destDir string) tea.Cmd {
 		// Create the destination directory
 		dest := filepath.Clean(filepath.Join(destDir, release))
 		if _, err := os.Stat(dest); err == nil {
-			return gitReleaseDownloadedMsg{
-				release: release,
-				dest:    dest,
-				cached:  true,
-			}
+			return gitReleaseDownloadedMsg{release, dest, true}
 		} else if err = os.MkdirAll(dest, 0750); err != nil {
 			return errMsg(err)
 		}
@@ -332,25 +325,17 @@ func DownloadGitHubRelease(release, destDir string) tea.Cmd {
 		)
 
 		// Fetch the release
-		request, err := http.NewRequest(http.MethodGet, url, nil)
+		response, err := http.Get(url)
 		if err != nil {
 			return errMsg(err)
 		}
-
-		response, err := http.DefaultClient.Do(request)
-		if err != nil {
-			return errMsg(err)
-		}
-		defer func(Body io.ReadCloser) {
-			err := Body.Close()
-			if err != nil {
-				panic(err)
-			}
-		}(response.Body)
+		defer func() {
+			_ = response.Body.Close()
+		}()
 
 		if response.StatusCode != http.StatusOK {
 			if response.StatusCode == http.StatusNotFound {
-				return errMsg(fmt.Errorf("release not found at %s", request.URL.String()))
+				return errMsg(fmt.Errorf("release not found at %s", url))
 			}
 			return errMsg(fmt.Errorf("could not download release: %s", response.Status))
 		}
@@ -370,7 +355,7 @@ func DownloadGitHubRelease(release, destDir string) tea.Cmd {
 
 // AnalyzeRelease analyzes a release by counting lines of code
 // for a given release within the location directory.
-func AnalyzeRelease(locationDir string, releaseTag string) tea.Cmd {
+func AnalyzeRelease(locationDir, releaseTag string) tea.Cmd {
 	return func() tea.Msg {
 		totalLines := uint(0)
 		totalFiles := uint(0)
@@ -392,12 +377,9 @@ func AnalyzeRelease(locationDir string, releaseTag string) tea.Cmd {
 				if err != nil {
 					return err
 				}
-				defer func(file *os.File) {
-					err = file.Close()
-					if err != nil {
-						panic(err)
-					}
-				}(file)
+				defer func() {
+					_ = file.Close()
+				}()
 
 				lines, err := CountLines(file)
 				if err != nil {
