@@ -14,7 +14,7 @@ import (
 )
 
 // appVersion is the version of the application.
-const appVersion = "1.3.0"
+const appVersion = "1.4.0"
 
 // State represents the application state.
 type State int
