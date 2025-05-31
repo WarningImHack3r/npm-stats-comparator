@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"cmp"
 	"context"
 	"fmt"
+	"io"
 	"io/fs"
 	"net/http"
 	"os"
@@ -12,7 +14,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	abs "github.com/microsoft/kiota-abstractions-go"
 	octokit "github.com/octokit/go-sdk/pkg"
@@ -38,6 +39,7 @@ type (
 	// and whether the result was cached or not.
 	gitReleaseDownloadedMsg struct {
 		release, dest string
+		tarSize       int64
 		cached        bool
 	}
 	// analysisDoneMsg is a message that carries information about the analysis
@@ -51,91 +53,9 @@ type (
 type AnalysisResult struct {
 	releaseTag             string
 	totalLines, totalFiles uint
+	tarSize, totalDirSize  int64
 	linesByLanguage        map[string]uint
 }
-
-type ListItem struct {
-	previous *ListItem
-	next     *ListItem
-	AnalysisResult
-}
-
-func (l ListItem) Title() string {
-	textForDiff := func(diff int) string {
-		if diff > 0 {
-			return successStyle.Render(fmt.Sprintf("+%d lines", diff))
-		} else if diff < 0 {
-			return errorStyle.Render(fmt.Sprintf("%d lines", diff))
-		} else {
-			return "No change"
-		}
-	}
-	var sb strings.Builder
-
-	if l.previous != nil {
-		// All releases except the last one of the list
-		sb.WriteString("  ")
-		diffWithPrevious := int(l.totalLines) - int(l.previous.totalLines)
-		sb.WriteString(textForDiff(diffWithPrevious))
-
-		if l.next == nil {
-			// First release of the list
-			sb.WriteString(" • Total: ")
-			first := l.previous
-			for first.previous != nil {
-				first = first.previous
-			}
-			diffWithFirst := int(l.totalLines) - int(first.totalLines)
-			sb.WriteString(textForDiff(diffWithFirst))
-		}
-	}
-	return l.releaseTag + sb.String()
-}
-
-func (l ListItem) Description() string {
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("%d files • %d lines • ", l.totalFiles, l.totalLines))
-
-	// Sort and shorten map
-	type kv struct {
-		Key   string
-		Value uint
-	}
-	sorted := make([]kv, 0, len(l.linesByLanguage))
-	for k, v := range l.linesByLanguage {
-		sorted = append(sorted, kv{k, v})
-	}
-	slices.SortStableFunc(
-		sorted, func(a, b kv) int {
-			return cmp.Compare(b.Value, a.Value)
-		},
-	)
-	visibleLanguages := 2
-	if len(sorted) > visibleLanguages {
-		// Shorten to visibleLanguages languages and concat all the others into the "Other" category
-		otherElem := kv{fmt.Sprintf("%d other languages", len(sorted[visibleLanguages:])), 0}
-		for i := visibleLanguages; i < len(sorted); i++ {
-			otherElem.Value += l.linesByLanguage[sorted[i].Key]
-		}
-		sorted = append(sorted[:visibleLanguages], otherElem)
-	}
-
-	// Print languages
-	for i, lang := range sorted {
-		if i > 0 {
-			sb.WriteString(" / ")
-		}
-		sb.WriteString(fmt.Sprintf("%s (%d lines)", lang.Key, lang.Value))
-	}
-
-	return sb.String()
-}
-
-func (l ListItem) FilterValue() string {
-	return l.releaseTag
-}
-
-var _ list.DefaultItem = (*ListItem)(nil)
 
 // extToLang is a map that maps file extensions to programming languages.
 // It is used to count the number of lines by language.
@@ -299,7 +219,7 @@ func DownloadGitHubRelease(release, destDir string) tea.Cmd {
 		// Create the destination directory
 		dest := filepath.Clean(filepath.Join(destDir, release))
 		if _, err := os.Stat(dest); err == nil {
-			return gitReleaseDownloadedMsg{release, dest, true}
+			return gitReleaseDownloadedMsg{release, dest, 0, true}
 		} else if err = os.MkdirAll(dest, 0750); err != nil {
 			return errMsg(err)
 		}
@@ -340,8 +260,25 @@ func DownloadGitHubRelease(release, destDir string) tea.Cmd {
 			return errMsg(fmt.Errorf("could not download release: %s", response.Status))
 		}
 
+		wholeBody, err := io.ReadAll(response.Body)
+		if err != nil {
+			return errMsg(err)
+		}
+		bytesReader := bytes.NewReader(wholeBody)
+
 		// Un-tar the release
-		err = Untar(dest, response.Body)
+		err = Untar(dest, bytesReader)
+		if err != nil {
+			return errMsg(err)
+		}
+
+		_, err = bytesReader.Seek(0, io.SeekStart)
+		if err != nil {
+			return errMsg(err)
+		}
+
+		// Get the tar size
+		n, err := io.Copy(io.Discard, bytesReader)
 		if err != nil {
 			return errMsg(err)
 		}
@@ -349,6 +286,7 @@ func DownloadGitHubRelease(release, destDir string) tea.Cmd {
 		return gitReleaseDownloadedMsg{
 			release: release,
 			dest:    dest,
+			tarSize: n,
 		}
 	}
 }
@@ -360,6 +298,7 @@ func AnalyzeRelease(locationDir, releaseTag string) tea.Cmd {
 		totalLines := uint(0)
 		totalFiles := uint(0)
 		linesByLanguage := make(map[string]uint)
+		totalDirSize := int64(0)
 
 		// Walk the directory
 		err := filepath.WalkDir(
@@ -372,7 +311,6 @@ func AnalyzeRelease(locationDir, releaseTag string) tea.Cmd {
 					return nil
 				}
 
-				// Count lines of code
 				file, err := os.Open(path)
 				if err != nil {
 					return err
@@ -381,6 +319,14 @@ func AnalyzeRelease(locationDir, releaseTag string) tea.Cmd {
 					_ = file.Close()
 				}()
 
+				// Increment total dir size
+				info, err := d.Info()
+				if err != nil {
+					return err
+				}
+				totalDirSize += info.Size()
+
+				// Count lines of code
 				lines, err := CountLines(file)
 				if err != nil {
 					return err
@@ -406,6 +352,6 @@ func AnalyzeRelease(locationDir, releaseTag string) tea.Cmd {
 			return errMsg(err)
 		}
 
-		return analysisDoneMsg{releaseTag, totalLines, totalFiles, linesByLanguage}
+		return analysisDoneMsg{releaseTag, totalLines, totalFiles, 0, totalDirSize, linesByLanguage}
 	}
 }

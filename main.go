@@ -97,6 +97,7 @@ type (
 
 		downloadProgress   uint
 		downloadCacheCount uint
+		tarSize            map[string]int64
 
 		list                      *list.Model
 		wantedWidth, wantedHeight *int
@@ -127,6 +128,7 @@ func initialModel() model {
 			secondRelease: *secondRelease,
 			ignoreRegex:   *ignoreRegex,
 		},
+		tarSize: make(map[string]int64),
 	}
 
 	// Initialize spinner
@@ -365,6 +367,8 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m.downloadProgress++
 		if msg.cached {
 			m.downloadCacheCount++
+		} else {
+			m.tarSize[msg.release] = msg.tarSize
 		}
 		if m.downloadProgress == uint(len(m.data.releases)) {
 			m.state++ // Move to StateAnalyzing
@@ -401,6 +405,9 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			break
 		}
 		m.data.analysis[index] = msg // Insert the analysis result
+		if v, ok := m.tarSize[msg.releaseTag]; ok {
+			m.data.analysis[index].tarSize = v
+		}
 
 		areAllAnalysesDone := true
 		for _, analysis := range m.data.analysis {
