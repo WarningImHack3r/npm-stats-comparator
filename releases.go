@@ -220,7 +220,7 @@ func GetGitHubReleases(ownerRepo, token, from, to, regex string) tea.Cmd {
 		// Sort releases by reverse creation date
 		slices.SortStableFunc(
 			releases, func(a, b models.Releaseable) int {
-				return cmp.Compare(a.GetCreatedAt().Unix(), b.GetCreatedAt().Unix())
+				return cmp.Compare(b.GetCreatedAt().Unix(), a.GetCreatedAt().Unix())
 			},
 		)
 
