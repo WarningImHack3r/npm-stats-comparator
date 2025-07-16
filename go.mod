@@ -6,7 +6,7 @@ require (
 	github.com/charmbracelet/bubbles v0.21.0
 	github.com/charmbracelet/bubbletea v1.3.6
 	github.com/charmbracelet/lipgloss v1.1.0
-	github.com/microsoft/kiota-abstractions-go v1.9.2
+	github.com/microsoft/kiota-abstractions-go v1.9.3
 	github.com/octokit/go-sdk v0.0.30
 )
 
